@@ -1,10 +1,6 @@
 package co.uk.doverguitarteacher.securenotesaug20th
 
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.asLiveData // <-- IMPORT for asLiveData()
-import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.*
 import kotlinx.coroutines.launch
 
 class NoteViewModel(private val repository: NoteRepository) : ViewModel() {
@@ -21,6 +17,11 @@ class NoteViewModel(private val repository: NoteRepository) : ViewModel() {
 
     fun delete(note: Note) = viewModelScope.launch {
         repository.delete(note)
+    }
+
+    // ADD THIS FUNCTION
+    fun deleteById(id: Int) = viewModelScope.launch {
+        repository.deleteById(id)
     }
 
     fun getNoteById(id: Int): LiveData<Note> {

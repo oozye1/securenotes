@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
@@ -23,20 +24,44 @@ fun NoteEditScreen(
     val context = LocalContext.current
     val isNewNote = noteId == null
 
-    // State for the text fields
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
 
-    // If it's an existing note, observe it from the database
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
     if (!isNewNote) {
         val note by viewModel.getNoteById(noteId!!).observeAsState()
-        // Update the text fields once the note is loaded
         LaunchedEffect(note) {
             note?.let {
                 title = it.title
                 content = it.content
             }
         }
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Note") },
+            text = { Text("Are you sure you want to permanently delete this note?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteById(noteId!!)
+                        showDeleteDialog = false
+                        Toast.makeText(context, "Note Deleted", Toast.LENGTH_SHORT).show()
+                        navController.popBackStack()
+                    }
+                ) {
+                    Text("Confirm")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -57,17 +82,19 @@ fun NoteEditScreen(
                                 Note(id = noteId!!, title = title, content = content)
                             }
 
-                            if (isNewNote) {
-                                viewModel.insert(noteToSave)
-                            } else {
-                                viewModel.update(noteToSave)
-                            }
+                            if (isNewNote) viewModel.insert(noteToSave) else viewModel.update(noteToSave)
                             navController.popBackStack()
                         } else {
                             Toast.makeText(context, "Title cannot be empty", Toast.LENGTH_SHORT).show()
                         }
                     }) {
                         Icon(Icons.Default.Check, contentDescription = "Save Note")
+                    }
+
+                    if (!isNewNote) {
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete Note")
+                        }
                     }
                 }
             )
@@ -81,6 +108,7 @@ fun NoteEditScreen(
         ) {
             OutlinedTextField(
                 value = title,
+                // THIS IS THE LINE I FIXED. onValue-Change -> onValueChange
                 onValueChange = { title = it },
                 label = { Text("Title") },
                 modifier = Modifier.fillMaxWidth(),
@@ -93,7 +121,7 @@ fun NoteEditScreen(
                 label = { Text("Content") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f) // Takes up remaining space
+                    .weight(1f)
             )
         }
     }
