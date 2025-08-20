@@ -1,10 +1,16 @@
 package co.uk.doverguitarteacher.securenotesaug20th
 
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first // <-- IMPORT THAT FIXES THE '.first()' ERROR
+import kotlinx.coroutines.withContext
 
-class NoteRepository(private val noteDao: NoteDao) {
+class NoteRepository(
+    private val noteDao: NoteDao,
+    private val context: Context
+) {
 
-    // --- UPDATED LOGIC TO HANDLE SORTING ---
     fun getNotes(sortOrder: SortOrder): Flow<List<Note>> {
         return when (sortOrder) {
             SortOrder.BY_DATE_DESC -> noteDao.getNotesSortedByDate()
@@ -19,7 +25,17 @@ class NoteRepository(private val noteDao: NoteDao) {
         }
     }
 
-    // --- UNCHANGED FUNCTIONS ---
+    suspend fun deleteAndWipeById(id: Int) {
+        withContext(Dispatchers.IO) {
+            val noteToDelete = noteDao.getNoteById(id).first() // This now works
+            noteToDelete.imageFilename?.let { filename ->
+                context.deleteFile(filename)
+            }
+            noteDao.overwriteNoteById(id)
+            noteDao.deleteNoteById(id)
+        }
+    }
+
     fun getNoteById(id: Int): Flow<Note> {
         return noteDao.getNoteById(id)
     }
@@ -30,10 +46,5 @@ class NoteRepository(private val noteDao: NoteDao) {
 
     suspend fun update(note: Note) {
         noteDao.updateNote(note)
-    }
-
-    suspend fun deleteAndWipeById(id: Int) {
-        noteDao.overwriteNoteById(id)
-        noteDao.deleteNoteById(id)
     }
 }

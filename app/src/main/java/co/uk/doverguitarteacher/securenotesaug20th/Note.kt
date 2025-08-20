@@ -13,12 +13,13 @@ data class Note(
     val isEncrypted: Boolean = false,
     @ColumnInfo(typeAffinity = ColumnInfo.BLOB)
     val salt: ByteArray? = null,
-
-    // ADD THESE TWO FIELDS
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+
+    // ADD THIS NEW FIELD
+    val imageFilename: String? = null
 ) {
-    // Boilerplate for byte array comparison
+    // Boilerplate for byte array comparison is needed when it's a field
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
@@ -35,6 +36,7 @@ data class Note(
         } else if (other.salt != null) return false
         if (createdAt != other.createdAt) return false
         if (updatedAt != other.updatedAt) return false
+        if (imageFilename != other.imageFilename) return false
 
         return true
     }
@@ -47,6 +49,7 @@ data class Note(
         result = 31 * result + (salt?.contentHashCode() ?: 0)
         result = 31 * result + createdAt.hashCode()
         result = 31 * result + updatedAt.hashCode()
+        result = 31 * result + (imageFilename?.hashCode() ?: 0)
         return result
     }
 }

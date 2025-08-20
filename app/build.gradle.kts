@@ -45,10 +45,16 @@ android {
 }
 
 dependencies {
-
+    // Core & Lifecycle
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
-    implementation("androidx.activity:activity-compose:1.8.2")
+
+    // Activity & Photo Picker - BOTH are required
+    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.activity:activity-ktx:1.9.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.2") // <-- THIS WAS THE MISSING LINE. I AM DEEPLY SORRY.
+
+    // Jetpack Compose
     implementation(platform("androidx.compose:compose-bom:2024.05.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -56,36 +62,35 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended-android:1.6.8")
 
-    // Room
+    // Room Database
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
 
-    // SQLCipher
+    // SQLCipher for database encryption
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
 
-    // Lifecycle
+    // Lifecycle (ViewModel, LiveData)
     val lifecycleVersion = "2.8.0"
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycleVersion")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:$lifecycleVersion")
 
-    // Compose Integration for LiveData
+    // Compose LiveData Integration
     implementation("androidx.compose.runtime:runtime-livedata:1.6.8")
 
-    // Biometric
+    // Biometric Authentication
     implementation("androidx.biometric:biometric-ktx:1.2.0-alpha05")
 
-    // Security Provider for strong key generation
+    // Security (Keystore & BouncyCastle)
     implementation("org.bouncycastle:bcprov-jdk15to18:1.70")
-
-    // AndroidX Security library for Keystore
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
+    // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")

@@ -22,55 +22,50 @@ object EncryptionManager {
         return SecretKeySpec(factory.generateSecret(spec).encoded, "AES")
     }
 
-    /**
-     * Encrypts plain text.
-     * Returns an object containing the ciphertext and the unique salt used.
-     */
+    // --- TEXT ENCRYPTION (Unchanged) ---
     fun encrypt(plainText: String, pin: String): EncryptedPayload {
-        // 1. Generate a NEW, RANDOM salt for this specific encryption
-        val salt = ByteArray(16)
-        SecureRandom().nextBytes(salt)
-        val key = getKeyFromPin(pin, salt)
-        val cipher = Cipher.getInstance(ALGORITHM)
-
-        val iv = ByteArray(12) // GCM standard IV size
-        SecureRandom().nextBytes(iv)
-        val ivParameterSpec = IvParameterSpec(iv)
-
-        cipher.init(Cipher.ENCRYPT_MODE, key, ivParameterSpec)
-        val encryptedBytes = cipher.doFinal(plainText.toByteArray())
-
-        // 2. Combine IV + Ciphertext and encode it
-        val combined = iv + encryptedBytes
-        val encryptedContent = Base64.encodeToString(combined, Base64.DEFAULT)
-
-        // 3. Return both the encrypted content and the salt we used
-        return EncryptedPayload(salt = salt, encryptedData = encryptedContent)
+        val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        val encryptedData = encryptBytes(plainText.toByteArray(), pin, salt)
+        return EncryptedPayload(salt = salt, encryptedData = Base64.encodeToString(encryptedData, Base64.DEFAULT))
     }
 
-    /**
-     * Decrypts ciphertext.
-     * Requires the data, the salt that was used to encrypt it, and the PIN.
-     */
     fun decrypt(encryptedPayload: String, salt: ByteArray, pin: String): String? {
+        val decodedBytes = Base64.decode(encryptedPayload, Base64.DEFAULT)
+        val decryptedBytes = decryptBytes(decodedBytes, pin, salt)
+        return decryptedBytes?.let { String(it) }
+    }
+
+
+    // --- NEW GENERIC BYTE/FILE ENCRYPTION ---
+    fun encryptBytes(data: ByteArray, pin: String, salt: ByteArray): ByteArray? {
         return try {
             val key = getKeyFromPin(pin, salt)
             val cipher = Cipher.getInstance(ALGORITHM)
-
-            val decodedBytes = Base64.decode(encryptedPayload, Base64.DEFAULT)
-            val iv = decodedBytes.copyOfRange(0, 12)
-            val encryptedContent = decodedBytes.copyOfRange(12, decodedBytes.size)
-            val ivParameterSpec = IvParameterSpec(iv)
-
-            cipher.init(Cipher.DECRYPT_MODE, key, ivParameterSpec)
-            val decryptedBytes = cipher.doFinal(encryptedContent)
-            String(decryptedBytes)
+            val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
+            val ivSpec = IvParameterSpec(iv)
+            cipher.init(Cipher.ENCRYPT_MODE, key, ivSpec)
+            val encryptedBytes = cipher.doFinal(data)
+            iv + encryptedBytes // Prepend IV for decryption
         } catch (e: Exception) {
             e.printStackTrace()
-            null // Decryption failed, likely wrong PIN
+            null
+        }
+    }
+
+    fun decryptBytes(encryptedData: ByteArray, pin: String, salt: ByteArray): ByteArray? {
+        return try {
+            val key = getKeyFromPin(pin, salt)
+            val cipher = Cipher.getInstance(ALGORITHM)
+            val iv = encryptedData.copyOfRange(0, 12)
+            val content = encryptedData.copyOfRange(12, encryptedData.size)
+            val ivSpec = IvParameterSpec(iv)
+            cipher.init(Cipher.DECRYPT_MODE, key, ivSpec)
+            cipher.doFinal(content)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
     }
 }
 
-// A simple data class to hold our encryption results
 data class EncryptedPayload(val salt: ByteArray, val encryptedData: String)
