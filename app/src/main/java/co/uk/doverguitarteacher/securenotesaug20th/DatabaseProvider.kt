@@ -5,6 +5,7 @@ import androidx.room.Room
 import net.sqlcipher.database.SupportFactory
 
 object DatabaseProvider {
+
     @Volatile
     private var instance: AppDatabase? = null
 
@@ -15,18 +16,19 @@ object DatabaseProvider {
     }
 
     private fun buildDatabase(context: Context): AppDatabase {
-        val passphrase = getOrCreatePassphrase() // Simplified for now
+        // NO MORE HARDCODED PASSPHRASE.
+        // Get it securely from the KeystoreManager instead.
+        val passphrase = KeystoreManager.getDatabasePassphrase(context.applicationContext)
         val factory = SupportFactory(passphrase)
+
         return Room.databaseBuilder(
             context.applicationContext,
             AppDatabase::class.java, "secure_notes.db"
         )
             .openHelperFactory(factory)
+            // If the schema changes (e.g., version bump), destroy and recreate the database.
+            // FOR DEVELOPMENT ONLY. A production app needs a real migration strategy.
+            .fallbackToDestructiveMigration()
             .build()
-    }
-
-    private fun getOrCreatePassphrase(): ByteArray {
-        // IMPORTANT: We will replace this with secure Keystore logic later.
-        return "your-super-secret-passphrase".toByteArray()
     }
 }

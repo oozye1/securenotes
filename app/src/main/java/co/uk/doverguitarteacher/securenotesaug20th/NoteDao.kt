@@ -8,6 +8,7 @@ interface NoteDao {
     @Query("SELECT * FROM notes ORDER BY id DESC")
     fun getAllNotes(): Flow<List<Note>>
 
+    // THIS IS THE CORRECTED QUERY
     @Query("SELECT * FROM notes WHERE id = :id")
     fun getNoteById(id: Int): Flow<Note>
 
@@ -20,7 +21,10 @@ interface NoteDao {
     @Delete
     suspend fun deleteNote(note: Note)
 
-    // ADD THIS FUNCTION
     @Query("DELETE FROM notes WHERE id = :id")
     suspend fun deleteNoteById(id: Int)
+
+    // This is the function for the secure wipe feature
+    @Query("UPDATE notes SET title = 'DELETED', content = '', isEncrypted = 0, salt = NULL WHERE id = :id")
+    suspend fun overwriteNoteById(id: Int)
 }

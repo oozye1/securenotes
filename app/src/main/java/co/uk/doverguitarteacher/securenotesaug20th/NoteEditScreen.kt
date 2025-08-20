@@ -29,12 +29,11 @@ fun NoteEditScreen(
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
     var isEncrypted by remember { mutableStateOf(false) }
+    var salt by remember { mutableStateOf<ByteArray?>(null) } // State for the unique salt
 
     var showPinDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var pinAction by remember { mutableStateOf(PinAction.ENCRYPT) }
-
-    var originalEncryptedContent by remember { mutableStateOf<String?>(null) }
 
     if (!isNewNote && noteId != null) {
         val note by viewModel.getNoteById(noteId).observeAsState()
@@ -43,9 +42,7 @@ fun NoteEditScreen(
                 title = it.title
                 content = it.content
                 isEncrypted = it.isEncrypted
-                if (it.isEncrypted) {
-                    originalEncryptedContent = it.content
-                }
+                salt = it.salt
             }
         }
     }
@@ -57,18 +54,21 @@ fun NoteEditScreen(
             onConfirm = { pin ->
                 showPinDialog = false
                 if (pinAction == PinAction.ENCRYPT) {
-                    content = EncryptionManager.encrypt(content, pin)
+                    val payload = EncryptionManager.encrypt(content, pin)
+                    content = payload.encryptedData // Store the encrypted text
+                    salt = payload.salt // Store the unique salt
                     isEncrypted = true
                     Toast.makeText(context, "Note Encrypted!", Toast.LENGTH_SHORT).show()
                 } else { // DECRYPT
                     val biometricManager = BiometricManager(context)
                     biometricManager.promptForAuthentication {
-                        val decryptedContent = originalEncryptedContent?.let {
-                            EncryptionManager.decrypt(it, pin)
+                        val decryptedContent = salt?.let { currentSalt ->
+                            EncryptionManager.decrypt(content, currentSalt, pin)
                         }
                         if (decryptedContent != null) {
                             content = decryptedContent
                             isEncrypted = false
+                            salt = null // Clear the salt as the note is no longer encrypted
                             Toast.makeText(context, "Note Decrypted!", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(context, "Incorrect PIN!", Toast.LENGTH_SHORT).show()
@@ -92,14 +92,10 @@ fun NoteEditScreen(
                         Toast.makeText(context, "Note Deleted", Toast.LENGTH_SHORT).show()
                         navController.popBackStack()
                     }
-                ) {
-                    Text("Confirm")
-                }
+                ) { Text("Confirm") }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
-                }
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
             }
         )
     }
@@ -114,28 +110,31 @@ fun NoteEditScreen(
                     }
                 },
                 actions = {
-                    if (!isNewNote) {
-                        IconButton(onClick = {
-                            pinAction = if (isEncrypted) PinAction.DECRYPT else PinAction.ENCRYPT
-                            showPinDialog = true
-                        }) {
-                            Icon(
-                                imageVector = if (isEncrypted) Icons.Filled.LockOpen else Icons.Filled.Lock,
-                                contentDescription = if (isEncrypted) "Decrypt Note" else "Encrypt Note"
-                            )
-                        }
+                    IconButton(onClick = {
+                        pinAction = if (isEncrypted) PinAction.DECRYPT else PinAction.ENCRYPT
+                        showPinDialog = true
+                    }) {
+                        Icon(
+                            imageVector = if (isEncrypted) Icons.Filled.LockOpen else Icons.Filled.Lock,
+                            contentDescription = if (isEncrypted) "Decrypt Note" else "Encrypt Note"
+                        )
                     }
+
                     if (!isNewNote) {
                         IconButton(onClick = { showDeleteDialog = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete Note")
                         }
                     }
+
                     IconButton(onClick = {
                         if (title.isNotBlank()) {
                             val noteToSave = Note(
-                                id = noteId ?: 0, title = title, content = content, isEncrypted = isEncrypted
+                                id = noteId ?: 0,
+                                title = title,
+                                content = content,
+                                isEncrypted = isEncrypted,
+                                salt = salt // SAVE THE SALT
                             )
-                            // THIS IS THE LINE WITH THE TYPO. IT IS NOW FIXED.
                             if (isNewNote) viewModel.insert(noteToSave) else viewModel.update(noteToSave)
                             navController.popBackStack()
                         } else {

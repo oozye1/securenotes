@@ -22,8 +22,8 @@ class NoteRepository(private val noteDao: NoteDao) {
         noteDao.deleteNote(note)
     }
 
-    // ADD THIS FUNCTION
-    suspend fun deleteById(id: Int) {
+    suspend fun deleteAndWipeById(id: Int) {
+        noteDao.overwriteNoteById(id)
         noteDao.deleteNoteById(id)
     }
 }

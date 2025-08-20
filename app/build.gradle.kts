@@ -45,10 +45,7 @@ android {
 }
 
 dependencies {
-    implementation("androidx.biometric:biometric-ktx:1.2.0-alpha05")
-    implementation("androidx.compose.material:material-icons-extended-android:1.6.8")
-    implementation("org.bouncycastle:bcprov-jdk15to18:1.70")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
+
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
     implementation("androidx.activity:activity-compose:1.8.2")
@@ -57,6 +54,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended-android:1.6.8")
 
     // Room
     val roomVersion = "2.6.1"
@@ -67,14 +65,26 @@ dependencies {
     // SQLCipher
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
 
-    // Lifecycle - ONE DECLARATION FOR THE VERSION
+    // Lifecycle
     val lifecycleVersion = "2.8.0"
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycleVersion")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion")
-    implementation("androidx.lifecycle:lifecycle-livedata-ktx:$lifecycleVersion") // For asLiveData()
+    implementation("androidx.lifecycle:lifecycle-livedata-ktx:$lifecycleVersion")
 
     // Compose Integration for LiveData
-    implementation("androidx.compose.runtime:runtime-livedata:1.6.8") // For observeAsState()
+    implementation("androidx.compose.runtime:runtime-livedata:1.6.8")
+
+    // Biometric
+    implementation("androidx.biometric:biometric-ktx:1.2.0-alpha05")
+
+    // Security Provider for strong key generation
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.70")
+
+    // AndroidX Security library for Keystore
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Navigation
+    implementation("androidx.navigation:navigation-compose:2.7.7")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

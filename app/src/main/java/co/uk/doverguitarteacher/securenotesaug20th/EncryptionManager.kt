@@ -13,73 +13,64 @@ object EncryptionManager {
 
     private const val ALGORITHM = "AES/GCM/NoPadding"
     private const val KEY_DERIVATION_ALGORITHM = "PBKDF2WithHmacSHA256"
-    private const val ITERATION_COUNT = 65536 // Recommended standard
-    private const val KEY_LENGTH = 256 // AES-256
+    private const val ITERATION_COUNT = 65536
+    private const val KEY_LENGTH = 256
 
-    // A fixed, non-secret salt for key derivation. In a real-world high-security app,
-    // you might store a unique salt per note. For simplicity, we use one here.
-    private val salt = "a_fixed_salt_for_secure_notes".toByteArray()
-
-    /**
-     * Derives a 256-bit AES key from a user's PIN.
-     */
-    private fun getKeyFromPin(pin: String): SecretKey {
+    private fun getKeyFromPin(pin: String, salt: ByteArray): SecretKey {
         val factory = SecretKeyFactory.getInstance(KEY_DERIVATION_ALGORITHM)
         val spec = PBEKeySpec(pin.toCharArray(), salt, ITERATION_COUNT, KEY_LENGTH)
         return SecretKeySpec(factory.generateSecret(spec).encoded, "AES")
     }
 
     /**
-     * Encrypts the note content.
-     * Returns a Base64 encoded string containing "iv:encrypted_content".
+     * Encrypts plain text.
+     * Returns an object containing the ciphertext and the unique salt used.
      */
-    fun encrypt(plainText: String, pin: String): String {
-        try {
-            val key = getKeyFromPin(pin)
-            val cipher = Cipher.getInstance(ALGORITHM)
+    fun encrypt(plainText: String, pin: String): EncryptedPayload {
+        // 1. Generate a NEW, RANDOM salt for this specific encryption
+        val salt = ByteArray(16)
+        SecureRandom().nextBytes(salt)
+        val key = getKeyFromPin(pin, salt)
+        val cipher = Cipher.getInstance(ALGORITHM)
 
-            // Generate a random, non-secret Initialization Vector (IV)
-            val iv = ByteArray(12) // GCM standard IV size
-            SecureRandom().nextBytes(iv)
-            val ivParameterSpec = IvParameterSpec(iv)
+        val iv = ByteArray(12) // GCM standard IV size
+        SecureRandom().nextBytes(iv)
+        val ivParameterSpec = IvParameterSpec(iv)
 
-            cipher.init(Cipher.ENCRYPT_MODE, key, ivParameterSpec)
-            val encryptedBytes = cipher.doFinal(plainText.toByteArray())
+        cipher.init(Cipher.ENCRYPT_MODE, key, ivParameterSpec)
+        val encryptedBytes = cipher.doFinal(plainText.toByteArray())
 
-            // Combine IV and encrypted content, then encode to Base64
-            val combined = iv + encryptedBytes
-            return Base64.encodeToString(combined, Base64.DEFAULT)
-        } catch (e: Exception) {
-            // In a real app, handle this error more gracefully
-            e.printStackTrace()
-            return ""
-        }
+        // 2. Combine IV + Ciphertext and encode it
+        val combined = iv + encryptedBytes
+        val encryptedContent = Base64.encodeToString(combined, Base64.DEFAULT)
+
+        // 3. Return both the encrypted content and the salt we used
+        return EncryptedPayload(salt = salt, encryptedData = encryptedContent)
     }
 
     /**
-     * Decrypts the note content.
-     * Expects a Base64 encoded string in the format "iv:encrypted_content".
+     * Decrypts ciphertext.
+     * Requires the data, the salt that was used to encrypt it, and the PIN.
      */
-    fun decrypt(encryptedText: String, pin: String): String? {
-        try {
-            val key = getKeyFromPin(pin)
+    fun decrypt(encryptedPayload: String, salt: ByteArray, pin: String): String? {
+        return try {
+            val key = getKeyFromPin(pin, salt)
             val cipher = Cipher.getInstance(ALGORITHM)
 
-            val decodedBytes = Base64.decode(encryptedText, Base64.DEFAULT)
-
-            // Extract the IV from the beginning of the decoded data
+            val decodedBytes = Base64.decode(encryptedPayload, Base64.DEFAULT)
             val iv = decodedBytes.copyOfRange(0, 12)
             val encryptedContent = decodedBytes.copyOfRange(12, decodedBytes.size)
             val ivParameterSpec = IvParameterSpec(iv)
 
             cipher.init(Cipher.DECRYPT_MODE, key, ivParameterSpec)
             val decryptedBytes = cipher.doFinal(encryptedContent)
-
-            return String(decryptedBytes)
+            String(decryptedBytes)
         } catch (e: Exception) {
-            // This will often fail if the wrong PIN is used. Return null to indicate failure.
             e.printStackTrace()
-            return null
+            null // Decryption failed, likely wrong PIN
         }
     }
 }
+
+// A simple data class to hold our encryption results
+data class EncryptedPayload(val salt: ByteArray, val encryptedData: String)
