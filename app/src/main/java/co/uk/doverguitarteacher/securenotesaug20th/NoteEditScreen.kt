@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import androidx.navigation.NavController
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -22,26 +23,29 @@ fun NoteEditScreen(
     viewModel: NoteViewModel,
     noteId: Int?
 ) {
-    val context = LocalContext.current
+    val context = LocalContext.current as FragmentActivity
     val isNewNote = noteId == null
 
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
     var isEncrypted by remember { mutableStateOf(false) }
-    val originalContent = remember { mutableStateOf("") }
 
     var showPinDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var pinAction by remember { mutableStateOf(PinAction.ENCRYPT) }
 
-    if (!isNewNote) {
-        val note by viewModel.getNoteById(noteId!!).observeAsState()
+    var originalEncryptedContent by remember { mutableStateOf<String?>(null) }
+
+    if (!isNewNote && noteId != null) {
+        val note by viewModel.getNoteById(noteId).observeAsState()
         LaunchedEffect(note) {
             note?.let {
                 title = it.title
                 content = it.content
-                originalContent.value = it.content
                 isEncrypted = it.isEncrypted
+                if (it.isEncrypted) {
+                    originalEncryptedContent = it.content
+                }
             }
         }
     }
@@ -57,13 +61,18 @@ fun NoteEditScreen(
                     isEncrypted = true
                     Toast.makeText(context, "Note Encrypted!", Toast.LENGTH_SHORT).show()
                 } else { // DECRYPT
-                    val decryptedContent = EncryptionManager.decrypt(originalContent.value, pin)
-                    if (decryptedContent != null) {
-                        content = decryptedContent
-                        isEncrypted = false
-                        Toast.makeText(context, "Note Decrypted!", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "Incorrect PIN!", Toast.LENGTH_SHORT).show()
+                    val biometricManager = BiometricManager(context)
+                    biometricManager.promptForAuthentication {
+                        val decryptedContent = originalEncryptedContent?.let {
+                            EncryptionManager.decrypt(it, pin)
+                        }
+                        if (decryptedContent != null) {
+                            content = decryptedContent
+                            isEncrypted = false
+                            Toast.makeText(context, "Note Decrypted!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Incorrect PIN!", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -76,13 +85,21 @@ fun NoteEditScreen(
             title = { Text("Delete Note") },
             text = { Text("Are you sure you want to permanently delete this note?") },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteById(noteId!!)
-                    navController.popBackStack()
-                }) { Text("Confirm") }
+                TextButton(
+                    onClick = {
+                        viewModel.deleteById(noteId!!)
+                        showDeleteDialog = false
+                        Toast.makeText(context, "Note Deleted", Toast.LENGTH_SHORT).show()
+                        navController.popBackStack()
+                    }
+                ) {
+                    Text("Confirm")
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
     }
@@ -103,27 +120,22 @@ fun NoteEditScreen(
                             showPinDialog = true
                         }) {
                             Icon(
-                                // THIS LINE WILL NOW WORK CORRECTLY
                                 imageVector = if (isEncrypted) Icons.Filled.LockOpen else Icons.Filled.Lock,
                                 contentDescription = if (isEncrypted) "Decrypt Note" else "Encrypt Note"
                             )
                         }
                     }
-
                     if (!isNewNote) {
                         IconButton(onClick = { showDeleteDialog = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete Note")
                         }
                     }
-
                     IconButton(onClick = {
                         if (title.isNotBlank()) {
                             val noteToSave = Note(
-                                id = noteId ?: 0,
-                                title = title,
-                                content = content,
-                                isEncrypted = isEncrypted
+                                id = noteId ?: 0, title = title, content = content, isEncrypted = isEncrypted
                             )
+                            // THIS IS THE LINE WITH THE TYPO. IT IS NOW FIXED.
                             if (isNewNote) viewModel.insert(noteToSave) else viewModel.update(noteToSave)
                             navController.popBackStack()
                         } else {
@@ -159,10 +171,10 @@ fun NoteEditScreen(
     }
 }
 
-enum class PinAction { ENCRYPT, DECRYPT }
+private enum class PinAction { ENCRYPT, DECRYPT }
 
 @Composable
-fun PinDialog(
+private fun PinDialog(
     action: PinAction,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
