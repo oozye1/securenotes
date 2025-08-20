@@ -1,7 +1,6 @@
 package co.uk.doverguitarteacher.securenotesaug20th
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,7 +8,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -23,12 +25,10 @@ class MainActivity : FragmentActivity() {
         NoteViewModelFactory((application as NotesApplication).repository)
     }
 
-    // UPDATED to use the correct BiometricManager class
     private lateinit var biometricManager: BiometricManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // UPDATED to use the correct BiometricManager class
         biometricManager = BiometricManager(this)
 
         setContent {
@@ -39,16 +39,29 @@ class MainActivity : FragmentActivity() {
                 ) {
                     var isAuthenticated by remember { mutableStateOf(false) }
 
+                    // --- AUTO-LOCK LOGIC ---
+                    val lifecycleOwner = LocalLifecycleOwner.current
+                    DisposableEffect(lifecycleOwner) {
+                        val observer = LifecycleEventObserver { _, event ->
+                            // When the app is stopped (goes to background), reset authentication
+                            if (event == Lifecycle.Event.ON_STOP) {
+                                isAuthenticated = false
+                            }
+                        }
+                        lifecycleOwner.lifecycle.addObserver(observer)
+                        onDispose {
+                            lifecycleOwner.lifecycle.removeObserver(observer)
+                        }
+                    }
+
                     if (isAuthenticated) {
                         NotesAppNavigation(noteViewModel)
                     } else {
-                        // This prevents the auth prompt from appearing every time the screen rotates
                         LaunchedEffect(Unit) {
                             biometricManager.promptForAuthentication {
                                 isAuthenticated = true
                             }
                         }
-                        // Show a loading/locked screen while waiting for authentication
                         LockedScreen(
                             onUnlockClick = {
                                 biometricManager.promptForAuthentication {
@@ -82,12 +95,16 @@ fun NotesAppNavigation(noteViewModel: NoteViewModel) {
                 defaultValue = -1
             })
         ) { backStackEntry ->
-            val noteId = backStackEntry.arguments?.getInt("noteId")
-            NoteEditScreen(
-                navController = navController,
-                viewModel = noteViewModel,
-                noteId = if (noteId == -1) null else noteId
-            )
+            // --- SCREENSHOT PREVENTION LOGIC ---
+            // Wrap the entire edit screen with our SecureScreen composable
+            SecureScreen {
+                val noteId = backStackEntry.arguments?.getInt("noteId")
+                NoteEditScreen(
+                    navController = navController,
+                    viewModel = noteViewModel,
+                    noteId = if (noteId == -1) null else noteId
+                )
+            }
         }
     }
 }
