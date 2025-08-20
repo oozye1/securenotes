@@ -10,6 +10,11 @@ class NoteRepository(private val noteDao: NoteDao) {
         return noteDao.getNoteById(id)
     }
 
+    // ADD THIS NEW FUNCTION
+    fun searchNotes(query: String): Flow<List<Note>> {
+        return noteDao.searchNotes(query)
+    }
+
     suspend fun insert(note: Note) {
         noteDao.insertNote(note)
     }
