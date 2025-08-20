@@ -36,6 +36,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true // <-- THIS IS THE FIX. THIS LINE FORCES IT TO BE CREATED.
     }
     packaging {
         resources {
@@ -52,7 +53,7 @@ dependencies {
     // Activity & Photo Picker - BOTH are required
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.activity:activity-ktx:1.9.0")
-    implementation("androidx.fragment:fragment-ktx:1.8.2") // <-- THIS WAS THE MISSING LINE. I AM DEEPLY SORRY.
+    implementation("androidx.fragment:fragment-ktx:1.8.2")
 
     // Jetpack Compose
     implementation(platform("androidx.compose:compose-bom:2024.05.00"))

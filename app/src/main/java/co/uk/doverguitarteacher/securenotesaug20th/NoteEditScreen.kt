@@ -1,4 +1,6 @@
 package co.uk.doverguitarteacher.securenotesaug20th
+
+import co.uk.doverguitarteacher.securenotesaug20th.BuildConfig
 import androidx.activity.result.PickVisualMediaRequest
 import android.content.Context
 import android.graphics.Bitmap
@@ -6,7 +8,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts // <-- IMPORT THAT FIXES PickVisualMedia ERROR
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -25,13 +26,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
-import java.security.SecureRandom
+import java.io.File
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,127 +46,146 @@ fun NoteEditScreen(
     val coroutineScope = rememberCoroutineScope()
     val isNewNote = noteId == null
 
-    var title by remember { mutableStateOf("") }
-    var content by remember { mutableStateOf("") }
-    var isEncrypted by remember { mutableStateOf(false) }
-    var salt by remember { mutableStateOf<ByteArray?>(null) }
-    var createdAt by remember { mutableStateOf(0L) }
-    var imageFilename by remember { mutableStateOf<String?>(null) }
+    val title by viewModel.editNoteTitle.collectAsState()
+    val content by viewModel.editNoteContent.collectAsState()
+    val imageUri by viewModel.editNoteImageUri.collectAsState()
+    val existingNote by viewModel.editNoteExistingData.collectAsState()
+    val tempCameraUri by viewModel.tempCameraImageUri.collectAsState()
 
-    var imageUri by remember { mutableStateOf<Uri?>(null) }
+    var isEncrypted by remember(existingNote) { mutableStateOf(existingNote?.isEncrypted ?: false) }
     var decryptedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-
     var showPinDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var pinAction by remember { mutableStateOf(PinAction.ENCRYPT) }
 
+    LaunchedEffect(Unit) {
+        viewModel.loadNoteForEdit(noteId)
+    }
+
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
-        onResult = { uri ->
-            if (uri != null) {
-                imageUri = uri
-                decryptedBitmap = null
-            }
-        }
+        onResult = { uri -> if (uri != null) viewModel.onImageUriChange(uri) }
     )
 
-    if (!isNewNote && noteId != null) {
-        val note by viewModel.getNoteById(noteId).observeAsState()
-        LaunchedEffect(note) {
-            note?.let {
-                title = it.title
-                content = it.content
-                isEncrypted = it.isEncrypted
-                salt = it.salt
-                createdAt = it.createdAt
-                imageFilename = it.imageFilename
-                decryptedBitmap = null
-                imageUri = null
-            }
-        }
-    }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture(),
+        onResult = { success -> if (success) viewModel.onImageUriChange(tempCameraUri) }
+    )
 
-    val onSaveNote: () -> Unit = {
-        if (title.isBlank()) {
-            Toast.makeText(context, "Title cannot be empty", Toast.LENGTH_SHORT).show()
-        } else if (isEncrypted && salt == null) {
-            pinAction = PinAction.ENCRYPT
-            showPinDialog = true
-        } else {
-            coroutineScope.launch {
-                val currentTime = System.currentTimeMillis()
-                val finalCreatedAt = if (isNewNote) currentTime else createdAt
-                var finalImageFilename = imageFilename
-
-                imageUri?.let { uri ->
-                    if (salt != null) {
-                        val imageBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        // Dummy PIN is fine here, as the content encryption is the master
-                        val encryptedBytes = imageBytes?.let { EncryptionManager.encryptBytes(it, "000000", salt!!) }
-                        val filename = "IMG_${UUID.randomUUID()}.enc"
-
-                        if (encryptedBytes != null) {
-                            withContext(Dispatchers.IO) {
-                                imageFilename?.let { context.deleteFile(it) }
-                                context.openFileOutput(filename, Context.MODE_PRIVATE).use { it.write(encryptedBytes) }
-                            }
-                            finalImageFilename = filename
-                        }
-                    } else {
-                        val imageBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                        val filename = "IMG_${UUID.randomUUID()}.jpg"
-                        if (imageBytes != null) {
-                            withContext(Dispatchers.IO) {
-                                imageFilename?.let { context.deleteFile(it) }
-                                context.openFileOutput(filename, Context.MODE_PRIVATE).use { it.write(imageBytes) }
-                            }
-                            finalImageFilename = filename
-                        }
-                    }
+    LaunchedEffect(imageUri, existingNote) {
+        decryptedBitmap = null
+        when {
+            imageUri != null -> {
+                withContext(Dispatchers.IO) {
+                    try {
+                        decryptedBitmap = BitmapFactory.decodeStream(context.contentResolver.openInputStream(imageUri!!))
+                    } catch (e: Exception) { e.printStackTrace() }
                 }
-
-                val noteToSave = Note(
-                    id = noteId ?: 0,
-                    title = title,
-                    content = content,
-                    isEncrypted = isEncrypted,
-                    salt = salt,
-                    createdAt = finalCreatedAt,
-                    updatedAt = currentTime,
-                    imageFilename = finalImageFilename
-                )
-                if (isNewNote) viewModel.insert(noteToSave) else viewModel.update(noteToSave)
-                navController.popBackStack()
+            }
+            existingNote != null && !existingNote!!.isEncrypted && existingNote!!.imageFilename != null -> {
+                withContext(Dispatchers.IO) {
+                    try {
+                        val bytes = context.openFileInput(existingNote!!.imageFilename!!).use { it.readBytes() }
+                        decryptedBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
             }
         }
     }
 
-    val onDecryptNote: (String) -> Unit = { pin ->
-        val biometricManager = BiometricManager(context)
-        biometricManager.promptForAuthentication {
-            coroutineScope.launch {
-                val decryptedText = salt?.let { currentSalt -> EncryptionManager.decrypt(content, currentSalt, pin) }
-                if (decryptedText != null) {
-                    content = decryptedText
-                    isEncrypted = false
+    val onSaveUnencryptedNote = {
+        coroutineScope.launch {
+            if (title.isBlank()) {
+                Toast.makeText(context, "Title cannot be empty", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
 
-                    imageFilename?.let { filename ->
-                        withContext(Dispatchers.IO) {
-                            try {
-                                val encryptedImageBytes = context.openFileInput(filename).use { it.readBytes() }
-                                val decryptedImageBytes = salt?.let { EncryptionManager.decryptBytes(encryptedImageBytes, pin, it) }
-                                if (decryptedImageBytes != null) {
-                                    decryptedBitmap = BitmapFactory.decodeByteArray(decryptedImageBytes, 0, decryptedImageBytes.size)
-                                }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
+            var finalImageFilename = existingNote?.imageFilename
+            if (imageUri != null) {
+                finalImageFilename = withContext(Dispatchers.IO) {
+                    val imageBytes = context.contentResolver.openInputStream(imageUri!!)?.use { it.readBytes() }
+                    if (imageBytes != null) {
+                        val newFilename = "IMG_${UUID.randomUUID()}.jpg"
+                        existingNote?.imageFilename?.let { context.deleteFile(it) }
+                        context.openFileOutput(newFilename, Context.MODE_PRIVATE).use { it.write(imageBytes) }
+                        newFilename
+                    } else { existingNote?.imageFilename }
+                }
+            }
+            val noteToSave = Note(
+                id = noteId ?: 0, title = title, content = content, isEncrypted = false, salt = null,
+                createdAt = existingNote?.createdAt ?: System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis(), imageFilename = finalImageFilename
+            )
+            if (isNewNote) viewModel.insert(noteToSave) else viewModel.update(noteToSave)
+            navController.popBackStack()
+        }
+    }
+
+    val onEncryptAndSave = { pin: String ->
+        coroutineScope.launch {
+            if (title.isBlank()) {
+                Toast.makeText(context, "Title cannot be empty", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            val payload = EncryptionManager.encrypt(content, pin)
+            val encryptedContent = payload.encryptedData
+            val newSalt = payload.salt
+
+            var finalImageFilename = existingNote?.imageFilename
+            val imageToEncryptUri = imageUri ?: existingNote?.imageFilename?.let { Uri.fromFile(context.getFileStreamPath(it)) }
+
+            if (imageToEncryptUri != null) {
+                finalImageFilename = withContext(Dispatchers.IO) {
+                    val imageBytes = context.contentResolver.openInputStream(imageToEncryptUri)?.use { it.readBytes() }
+                    if (imageBytes != null) {
+                        val encryptedBytes = EncryptionManager.encryptBytes(imageBytes, pin, newSalt)
+                        val newFilename = "IMG_${UUID.randomUUID()}.enc"
+                        if (encryptedBytes != null) {
+                            existingNote?.imageFilename?.let { context.deleteFile(it) }
+                            context.openFileOutput(newFilename, Context.MODE_PRIVATE).use { it.write(encryptedBytes) }
+                            newFilename
+                        } else { existingNote?.imageFilename }
+                    } else { existingNote?.imageFilename }
+                }
+            }
+
+            val noteToSave = Note(
+                id = noteId ?: 0, title = title, content = encryptedContent, isEncrypted = true, salt = newSalt,
+                createdAt = existingNote?.createdAt ?: System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis(), imageFilename = finalImageFilename
+            )
+            if (isNewNote) viewModel.insert(noteToSave) else viewModel.update(noteToSave)
+            navController.popBackStack()
+        }
+    }
+
+    val onDecryptNote = { pin: String ->
+        existingNote?.let { currentNote ->
+            val currentSalt = currentNote.salt ?: return@let
+            val biometricManager = BiometricManager(context)
+            biometricManager.promptForAuthentication {
+                coroutineScope.launch {
+                    val decryptedText = EncryptionManager.decrypt(currentNote.content, currentSalt, pin)
+                    if (decryptedText != null) {
+                        viewModel.onContentChange(decryptedText)
+                        isEncrypted = false
+                        currentNote.imageFilename?.let { filename ->
+                            withContext(Dispatchers.IO) {
+                                try {
+                                    val encBytes = context.openFileInput(filename).use { it.readBytes() }
+                                    val decBytes = EncryptionManager.decryptBytes(encBytes, pin, currentSalt)
+                                    if (decBytes != null) {
+                                        decryptedBitmap = BitmapFactory.decodeByteArray(decBytes, 0, decBytes.size)
+                                    }
+                                } catch (e: Exception) { e.printStackTrace() }
                             }
                         }
+                        Toast.makeText(context, "Note Decrypted!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Incorrect PIN!", Toast.LENGTH_SHORT).show()
                     }
-                    salt = null
-                    Toast.makeText(context, "Note Decrypted!", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, "Incorrect PIN!", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -178,11 +198,7 @@ fun NoteEditScreen(
             onConfirm = { pin ->
                 showPinDialog = false
                 if (pinAction == PinAction.ENCRYPT) {
-                    val payload = EncryptionManager.encrypt(content, pin)
-                    content = payload.encryptedData
-                    salt = payload.salt
-                    isEncrypted = true
-                    Toast.makeText(context, "Note is now encrypted. Tap Save.", Toast.LENGTH_SHORT).show()
+                    onEncryptAndSave(pin)
                 } else {
                     onDecryptNote(pin)
                 }
@@ -231,7 +247,9 @@ fun NoteEditScreen(
                     if (!isNewNote) {
                         IconButton(onClick = { showDeleteDialog = true }) { Icon(Icons.Default.Delete, contentDescription = "Delete Note") }
                     }
-                    IconButton(onClick = onSaveNote) {
+                    // --- THIS IS THE CRITICAL FIX ---
+                    // The `onClick` lambda now correctly calls the save function.
+                    IconButton(onClick = { onSaveUnencryptedNote() }) {
                         Icon(Icons.Default.Check, contentDescription = "Save Note")
                     }
                 }
@@ -247,7 +265,7 @@ fun NoteEditScreen(
         ) {
             OutlinedTextField(
                 value = title,
-                onValueChange = { title = it },
+                onValueChange = { viewModel.onTitleChange(it) },
                 label = { Text("Title") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -256,7 +274,7 @@ fun NoteEditScreen(
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedTextField(
                 value = content,
-                onValueChange = { content = it },
+                onValueChange = { viewModel.onContentChange(it) },
                 label = { Text("Content") },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -272,51 +290,54 @@ fun NoteEditScreen(
                 if (decryptedBitmap != null) {
                     Image(
                         bitmap = decryptedBitmap!!.asImageBitmap(),
-                        contentDescription = "Decrypted Image",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(4f / 3f),
-                        contentScale = ContentScale.Crop
-                    )
-                } else if (imageUri != null) {
-                    Image(
-                        bitmap = BitmapFactory.decodeStream(context.contentResolver.openInputStream(imageUri!!)).asImageBitmap(),
                         contentDescription = "Selected Image",
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(4f / 3f),
                         contentScale = ContentScale.Crop
                     )
-                } else if (imageFilename != null && !isEncrypted) {
-                    LaunchedEffect(imageFilename) {
-                        withContext(Dispatchers.IO) {
-                            try {
-                                val bytes = context.openFileInput(imageFilename).use { it.readBytes() }
-                                decryptedBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                        }
-                    }
+                } else if (isEncrypted && existingNote?.imageFilename != null) {
+                    Icon(
+                        Icons.Filled.Lock,
+                        contentDescription = "Encrypted Image",
+                        modifier = Modifier.size(128.dp)
+                    )
                 }
             }
 
             if (!isEncrypted) {
-                Button(
-                    onClick = {
-                        // THIS IS THE CORRECTED LINE
-                        photoPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    },
+                Row(
                     modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(top = 8.dp)
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Add Photo", modifier = Modifier.size(ButtonDefaults.IconSize))
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text(if (imageFilename == null && imageUri == null) "Add Image" else "Change Image")
+                    Button(
+                        onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = "Add from Gallery")
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("Gallery")
+                    }
+                    Button(
+                        onClick = {
+                            val newUri = viewModel.createTempCameraUri(context)
+                            cameraLauncher.launch(newUri)
+                        },
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Icon(Icons.Default.PhotoCamera, contentDescription = "Take Photo")
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("Camera")
+                    }
                 }
+                Text(
+                    text = if (existingNote?.imageFilename == null && imageUri == null) "Add an Image" else "Change Image",
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }
