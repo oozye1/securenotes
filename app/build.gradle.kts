@@ -45,6 +45,8 @@ android {
 }
 
 dependencies {
+    implementation("androidx.compose.material:material-icons-extended-android:1.6.8")
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.70")
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")

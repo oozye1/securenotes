@@ -2,15 +2,16 @@ package co.uk.doverguitarteacher.securenotesaug20th
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 
@@ -26,8 +27,12 @@ fun NoteEditScreen(
 
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
+    var isEncrypted by remember { mutableStateOf(false) }
+    val originalContent = remember { mutableStateOf("") }
 
+    var showPinDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var pinAction by remember { mutableStateOf(PinAction.ENCRYPT) }
 
     if (!isNewNote) {
         val note by viewModel.getNoteById(noteId!!).observeAsState()
@@ -35,8 +40,34 @@ fun NoteEditScreen(
             note?.let {
                 title = it.title
                 content = it.content
+                originalContent.value = it.content
+                isEncrypted = it.isEncrypted
             }
         }
+    }
+
+    if (showPinDialog) {
+        PinDialog(
+            action = pinAction,
+            onDismiss = { showPinDialog = false },
+            onConfirm = { pin ->
+                showPinDialog = false
+                if (pinAction == PinAction.ENCRYPT) {
+                    content = EncryptionManager.encrypt(content, pin)
+                    isEncrypted = true
+                    Toast.makeText(context, "Note Encrypted!", Toast.LENGTH_SHORT).show()
+                } else { // DECRYPT
+                    val decryptedContent = EncryptionManager.decrypt(originalContent.value, pin)
+                    if (decryptedContent != null) {
+                        content = decryptedContent
+                        isEncrypted = false
+                        Toast.makeText(context, "Note Decrypted!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Incorrect PIN!", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        )
     }
 
     if (showDeleteDialog) {
@@ -45,21 +76,13 @@ fun NoteEditScreen(
             title = { Text("Delete Note") },
             text = { Text("Are you sure you want to permanently delete this note?") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.deleteById(noteId!!)
-                        showDeleteDialog = false
-                        Toast.makeText(context, "Note Deleted", Toast.LENGTH_SHORT).show()
-                        navController.popBackStack()
-                    }
-                ) {
-                    Text("Confirm")
-                }
+                TextButton(onClick = {
+                    viewModel.deleteById(noteId!!)
+                    navController.popBackStack()
+                }) { Text("Confirm") }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
-                }
+                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
             }
         )
     }
@@ -74,14 +97,33 @@ fun NoteEditScreen(
                     }
                 },
                 actions = {
+                    if (!isNewNote) {
+                        IconButton(onClick = {
+                            pinAction = if (isEncrypted) PinAction.DECRYPT else PinAction.ENCRYPT
+                            showPinDialog = true
+                        }) {
+                            Icon(
+                                // THIS LINE WILL NOW WORK CORRECTLY
+                                imageVector = if (isEncrypted) Icons.Filled.LockOpen else Icons.Filled.Lock,
+                                contentDescription = if (isEncrypted) "Decrypt Note" else "Encrypt Note"
+                            )
+                        }
+                    }
+
+                    if (!isNewNote) {
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete Note")
+                        }
+                    }
+
                     IconButton(onClick = {
                         if (title.isNotBlank()) {
-                            val noteToSave = if (isNewNote) {
-                                Note(title = title, content = content)
-                            } else {
-                                Note(id = noteId!!, title = title, content = content)
-                            }
-
+                            val noteToSave = Note(
+                                id = noteId ?: 0,
+                                title = title,
+                                content = content,
+                                isEncrypted = isEncrypted
+                            )
                             if (isNewNote) viewModel.insert(noteToSave) else viewModel.update(noteToSave)
                             navController.popBackStack()
                         } else {
@@ -90,39 +132,66 @@ fun NoteEditScreen(
                     }) {
                         Icon(Icons.Default.Check, contentDescription = "Save Note")
                     }
-
-                    if (!isNewNote) {
-                        IconButton(onClick = { showDeleteDialog = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete Note")
-                        }
-                    }
                 }
             )
         }
     ) { paddingValues ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(16.dp)
+            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp)
         ) {
             OutlinedTextField(
                 value = title,
-                // THIS IS THE LINE I FIXED. onValue-Change -> onValueChange
                 onValueChange = { title = it },
                 label = { Text("Title") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                readOnly = isEncrypted
             )
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedTextField(
                 value = content,
                 onValueChange = { content = it },
                 label = { Text("Content") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                readOnly = isEncrypted
             )
         }
     }
+}
+
+enum class PinAction { ENCRYPT, DECRYPT }
+
+@Composable
+fun PinDialog(
+    action: PinAction,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var pin by remember { mutableStateOf("") }
+    val title = if (action == PinAction.ENCRYPT) "Set a 6-Digit PIN" else "Enter 6-Digit PIN"
+    val buttonText = if (action == PinAction.ENCRYPT) "Encrypt" else "Decrypt"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = pin,
+                onValueChange = { if (it.length <= 6) pin = it.filter { c -> c.isDigit() } },
+                label = { Text("PIN") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                visualTransformation = PasswordVisualTransformation()
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (pin.length == 6) onConfirm(pin) },
+                enabled = pin.length == 6
+            ) { Text(buttonText) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
