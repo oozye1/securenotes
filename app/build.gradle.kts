@@ -45,6 +45,7 @@ android {
 }
 
 dependencies {
+    implementation("androidx.biometric:biometric-ktx:1.2.0-alpha05")
     implementation("androidx.compose.material:material-icons-extended-android:1.6.8")
     implementation("org.bouncycastle:bcprov-jdk15to18:1.70")
     implementation("androidx.navigation:navigation-compose:2.7.7")
