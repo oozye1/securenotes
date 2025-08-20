@@ -1,7 +1,5 @@
 package co.uk.doverguitarteacher.securenotesaug20th
 
-import co.uk.doverguitarteacher.securenotesaug20th.BuildConfig
-import androidx.activity.result.PickVisualMediaRequest
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -9,6 +7,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -58,6 +57,9 @@ fun NoteEditScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var pinAction by remember { mutableStateOf(PinAction.ENCRYPT) }
 
+    // Add a state to track decrypted image bytes
+    var decryptedImageBytes by remember { mutableStateOf<ByteArray?>(null) }
+
     LaunchedEffect(Unit) {
         viewModel.loadNoteForEdit(noteId)
     }
@@ -72,9 +74,11 @@ fun NoteEditScreen(
         onResult = { success -> if (success) viewModel.onImageUriChange(tempCameraUri) }
     )
 
-    LaunchedEffect(imageUri, existingNote) {
+    LaunchedEffect(imageUri, existingNote, isEncrypted) {
         decryptedBitmap = null
-        when {
+        if (isEncrypted && existingNote?.imageFilename != null && decryptedImageBytes != null) {
+            decryptedBitmap = BitmapFactory.decodeByteArray(decryptedImageBytes, 0, decryptedImageBytes!!.size)
+        } else when {
             imageUri != null -> {
                 withContext(Dispatchers.IO) {
                     try {
@@ -133,22 +137,43 @@ fun NoteEditScreen(
             val encryptedContent = payload.encryptedData
             val newSalt = payload.salt
 
-            var finalImageFilename = existingNote?.imageFilename
+            // Only generate a new filename if a new image is picked
+            var finalImageFilename: String? = existingNote?.imageFilename
             val imageToEncryptUri = imageUri ?: existingNote?.imageFilename?.let { Uri.fromFile(context.getFileStreamPath(it)) }
 
-            if (imageToEncryptUri != null) {
+            val note = existingNote // assign to local variable for smart cast
+
+            if (imageUri != null) {
+                android.util.Log.d("NoteEditScreen", "Encrypting new image: $imageUri")
                 finalImageFilename = withContext(Dispatchers.IO) {
-                    val imageBytes = context.contentResolver.openInputStream(imageToEncryptUri)?.use { it.readBytes() }
+                    val imageBytes = context.contentResolver.openInputStream(imageUri!!)?.use { it.readBytes() }
+                    android.util.Log.d("NoteEditScreen", "Read imageBytes: ${imageBytes?.size}")
                     if (imageBytes != null) {
+                        // Log first 16 bytes as hex before encryption
+                        val hexPreview = imageBytes.take(16).joinToString(" ") { String.format("%02X", it) }
+                        android.util.Log.d("NoteEditScreen", "Original image bytes preview: $hexPreview")
                         val encryptedBytes = EncryptionManager.encryptBytes(imageBytes, pin, newSalt)
+                        android.util.Log.d("NoteEditScreen", "Encrypted imageBytes: ${encryptedBytes?.size}")
                         val newFilename = "IMG_${UUID.randomUUID()}.enc"
+                        // Only delete old image file if a new image is picked
+                        note?.imageFilename?.let {
+                            android.util.Log.d("NoteEditScreen", "Deleting old image file: $it")
+                            context.deleteFile(it)
+                        }
                         if (encryptedBytes != null) {
-                            existingNote?.imageFilename?.let { context.deleteFile(it) }
                             context.openFileOutput(newFilename, Context.MODE_PRIVATE).use { it.write(encryptedBytes) }
+                            android.util.Log.d("NoteEditScreen", "Saved encrypted image as: $newFilename")
+                            // Log the first 16 bytes of encryptedBytes for debugging
+                            val encryptedHexPreview = encryptedBytes.take(16).joinToString(" ") { String.format("%02X", it) }
+                            android.util.Log.d("NoteEditScreen", "Encrypted image bytes preview: $encryptedHexPreview")
                             newFilename
-                        } else { existingNote?.imageFilename }
-                    } else { existingNote?.imageFilename }
+                        } else null
+                    } else null
                 }
+            } else if (note != null && note.imageFilename != null) {
+                android.util.Log.d("NoteEditScreen", "No new image picked, keeping existing encrypted file: ${note.imageFilename}")
+                // Do NOT re-encrypt the image file if no new image is picked
+                finalImageFilename = note.imageFilename
             }
 
             val noteToSave = Note(
@@ -156,38 +181,73 @@ fun NoteEditScreen(
                 createdAt = existingNote?.createdAt ?: System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis(), imageFilename = finalImageFilename
             )
-            if (isNewNote) viewModel.insert(noteToSave) else viewModel.update(noteToSave)
+            if (isNewNote) {
+                viewModel.insert(noteToSave)
+            } else {
+                viewModel.update(noteToSave)
+            }
+            // Reload note data to update existingNote and imageFilename
+            viewModel.loadNoteForEdit(noteId)
             navController.popBackStack()
         }
     }
 
     val onDecryptNote = { pin: String ->
-        existingNote?.let { currentNote ->
-            val currentSalt = currentNote.salt ?: return@let
+        val currentNote = viewModel.editNoteExistingData.value
+        if (currentNote?.salt != null) {
+            val currentSalt = currentNote.salt
+            android.util.Log.d("NoteEditScreen", "Decrypting with PIN: $pin, salt: $currentSalt")
             val biometricManager = BiometricManager(context)
             biometricManager.promptForAuthentication {
                 coroutineScope.launch {
+                    android.util.Log.d("NoteEditScreen", "Starting decryption for noteId: ${currentNote.id}")
                     val decryptedText = EncryptionManager.decrypt(currentNote.content, currentSalt, pin)
+                    android.util.Log.d("NoteEditScreen", "Decrypted text: ${decryptedText?.take(50)}")
                     if (decryptedText != null) {
                         viewModel.onContentChange(decryptedText)
                         isEncrypted = false
-                        currentNote.imageFilename?.let { filename ->
+                        val imageFilenameToDecrypt = currentNote.imageFilename
+                        android.util.Log.d("NoteEditScreen", "Attempting to decrypt image file: $imageFilenameToDecrypt")
+                        imageFilenameToDecrypt?.let { filename ->
                             withContext(Dispatchers.IO) {
                                 try {
                                     val encBytes = context.openFileInput(filename).use { it.readBytes() }
+                                    android.util.Log.d("NoteEditScreen", "Read encrypted bytes: ${encBytes.size}")
                                     val decBytes = EncryptionManager.decryptBytes(encBytes, pin, currentSalt)
+                                    android.util.Log.d("NoteEditScreen", "Decrypted image bytes: ${decBytes?.size}")
                                     if (decBytes != null) {
-                                        decryptedBitmap = BitmapFactory.decodeByteArray(decBytes, 0, decBytes.size)
+                                        // Log first 16 bytes as hex
+                                        val hexPreview = decBytes.take(16).joinToString(" ") { String.format("%02X", it) }
+                                        android.util.Log.d("NoteEditScreen", "Decrypted image bytes preview: $hexPreview")
+                                        decryptedImageBytes = decBytes // Store decrypted bytes in state
+                                        try {
+                                            decryptedBitmap = BitmapFactory.decodeByteArray(decBytes, 0, decBytes.size)
+                                            android.util.Log.d("NoteEditScreen", "Set decryptedBitmap: ${decryptedBitmap != null}")
+                                            if (decryptedBitmap != null) {
+                                                android.util.Log.d("NoteEditScreen", "Bitmap dimensions: ${decryptedBitmap!!.width}x${decryptedBitmap!!.height}")
+                                            }
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("NoteEditScreen", "BitmapFactory.decodeByteArray exception", e)
+                                        }
+                                    } else {
+                                        android.util.Log.e("NoteEditScreen", "Decryption failed: decBytes is null")
+                                        withContext(Dispatchers.Main) { decryptedBitmap = null }
                                     }
-                                } catch (e: Exception) { e.printStackTrace() }
+                                } catch (e: Exception) {
+                                    android.util.Log.e("NoteEditScreen", "Exception during decryption", e)
+                                    withContext(Dispatchers.Main) { decryptedBitmap = null }
+                                }
                             }
                         }
                         Toast.makeText(context, "Note Decrypted!", Toast.LENGTH_SHORT).show()
                     } else {
+                        android.util.Log.e("NoteEditScreen", "Decryption failed: decryptedText is null")
                         Toast.makeText(context, "Incorrect PIN!", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
+        } else {
+            android.util.Log.e("NoteEditScreen", "Decryption failed: salt is null for noteId: ${currentNote?.id}")
         }
     }
 
@@ -247,8 +307,6 @@ fun NoteEditScreen(
                     if (!isNewNote) {
                         IconButton(onClick = { showDeleteDialog = true }) { Icon(Icons.Default.Delete, contentDescription = "Delete Note") }
                     }
-                    // --- THIS IS THE CRITICAL FIX ---
-                    // The `onClick` lambda now correctly calls the save function.
                     IconButton(onClick = { onSaveUnencryptedNote() }) {
                         Icon(Icons.Default.Check, contentDescription = "Save Note")
                     }
