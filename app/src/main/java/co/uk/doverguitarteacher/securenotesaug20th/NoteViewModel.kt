@@ -8,24 +8,26 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalCoroutinesApi::class)
 class NoteViewModel(private val repository: NoteRepository) : ViewModel() {
 
-    // A private StateFlow to hold the search text
     private val _searchText = MutableStateFlow("")
     val searchText = _searchText.asStateFlow()
 
-    // This is a powerful feature: it combines the search text flow
-    // with the database results. Every time the search text changes,
-    // this code re-runs to get the filtered list.
-    val notes: StateFlow<List<Note>> = searchText
-        .flatMapLatest { query ->
+    // --- NEW STATEFLOW FOR SORT ORDER ---
+    private val _sortOrder = MutableStateFlow(SortOrder.BY_DATE_DESC)
+    val sortOrder = _sortOrder.asStateFlow()
+
+    // --- UPGRADED FLOW COMBINING SEARCH AND SORT ---
+    val notes: StateFlow<List<Note>> =
+        combine(_searchText, _sortOrder) { text, sort ->
+            Pair(text, sort) // Emit a pair of the latest values
+        }.flatMapLatest { (query, sort) ->
             if (query.isBlank()) {
-                repository.allNotes
+                repository.getNotes(sort)
             } else {
-                repository.searchNotes(query)
+                repository.searchNotes(query, sort)
             }
-        }
-        .stateIn(
+        }.stateIn(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000), // Stay active for 5s after UI stops observing
+            started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
@@ -33,6 +35,13 @@ class NoteViewModel(private val repository: NoteRepository) : ViewModel() {
         _searchText.value = text
     }
 
+    // --- NEW FUNCTION TO CHANGE SORT ORDER ---
+    fun onSortOrderChange(newSortOrder: SortOrder) {
+        _sortOrder.value = newSortOrder
+    }
+
+
+    // --- UNCHANGED FUNCTIONS ---
     fun insert(note: Note) = viewModelScope.launch {
         repository.insert(note)
     }
@@ -45,7 +54,6 @@ class NoteViewModel(private val repository: NoteRepository) : ViewModel() {
         repository.deleteAndWipeById(id)
     }
 
-    // This function remains, using LiveData is fine for one-shot reads like this.
     fun getNoteById(id: Int): LiveData<Note> {
         return repository.getNoteById(id).asLiveData()
     }

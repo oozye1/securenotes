@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,14 +22,44 @@ fun NoteListScreen(
     onAddNote: () -> Unit,
     onNoteClick: (Note) -> Unit
 ) {
-    // We now collect from the StateFlows in the ViewModel
     val notes by viewModel.notes.collectAsState()
     val searchText by viewModel.searchText.collectAsState()
+    val sortOrder by viewModel.sortOrder.collectAsState()
+
+    var showSortMenu by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Secure Notes") },
+                actions = {
+                    // --- SORT MENU ---
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(Icons.Default.Sort, contentDescription = "Sort Notes")
+                        }
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Sort by Date (Newest)") },
+                                onClick = {
+                                    viewModel.onSortOrderChange(SortOrder.BY_DATE_DESC)
+                                    showSortMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Sort by Title (A-Z)") },
+                                onClick = {
+                                    viewModel.onSortOrderChange(SortOrder.BY_TITLE_ASC)
+                                    showSortMenu = false
+                                }
+                            )
+                        }
+
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.primary,
@@ -46,7 +77,6 @@ fun NoteListScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // --- SEARCH BAR ---
             OutlinedTextField(
                 value = searchText,
                 onValueChange = viewModel::onSearchTextChanged,
@@ -56,7 +86,6 @@ fun NoteListScreen(
                 placeholder = { Text("Search notes...") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search Icon") },
                 trailingIcon = {
-                    // Show a clear button if there is text
                     if (searchText.isNotBlank()) {
                         IconButton(onClick = { viewModel.onSearchTextChanged("") }) {
                             Icon(Icons.Default.Close, contentDescription = "Clear Search")
@@ -73,7 +102,7 @@ fun NoteListScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    items(notes, key = { it.id }) { note -> // Using a key improves performance
+                    items(notes, key = { it.id }) { note ->
                         NoteListItem(
                             note = note,
                             onClick = { onNoteClick(note) }

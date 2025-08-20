@@ -4,15 +4,24 @@ import kotlinx.coroutines.flow.Flow
 
 class NoteRepository(private val noteDao: NoteDao) {
 
-    val allNotes: Flow<List<Note>> = noteDao.getAllNotes()
-
-    fun getNoteById(id: Int): Flow<Note> {
-        return noteDao.getNoteById(id)
+    // --- UPDATED LOGIC TO HANDLE SORTING ---
+    fun getNotes(sortOrder: SortOrder): Flow<List<Note>> {
+        return when (sortOrder) {
+            SortOrder.BY_DATE_DESC -> noteDao.getNotesSortedByDate()
+            SortOrder.BY_TITLE_ASC -> noteDao.getNotesSortedByTitle()
+        }
     }
 
-    // ADD THIS NEW FUNCTION
-    fun searchNotes(query: String): Flow<List<Note>> {
-        return noteDao.searchNotes(query)
+    fun searchNotes(query: String, sortOrder: SortOrder): Flow<List<Note>> {
+        return when (sortOrder) {
+            SortOrder.BY_DATE_DESC -> noteDao.searchNotesSortedByDate(query)
+            SortOrder.BY_TITLE_ASC -> noteDao.searchNotesSortedByTitle(query)
+        }
+    }
+
+    // --- UNCHANGED FUNCTIONS ---
+    fun getNoteById(id: Int): Flow<Note> {
+        return noteDao.getNoteById(id)
     }
 
     suspend fun insert(note: Note) {
@@ -21,10 +30,6 @@ class NoteRepository(private val noteDao: NoteDao) {
 
     suspend fun update(note: Note) {
         noteDao.updateNote(note)
-    }
-
-    suspend fun delete(note: Note) {
-        noteDao.deleteNote(note)
     }
 
     suspend fun deleteAndWipeById(id: Int) {
