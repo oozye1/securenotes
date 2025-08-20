@@ -29,7 +29,8 @@ fun NoteEditScreen(
     var title by remember { mutableStateOf("") }
     var content by remember { mutableStateOf("") }
     var isEncrypted by remember { mutableStateOf(false) }
-    var salt by remember { mutableStateOf<ByteArray?>(null) } // State for the unique salt
+    var salt by remember { mutableStateOf<ByteArray?>(null) }
+    var createdAt by remember { mutableStateOf(0L) }
 
     var showPinDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -43,6 +44,7 @@ fun NoteEditScreen(
                 content = it.content
                 isEncrypted = it.isEncrypted
                 salt = it.salt
+                createdAt = it.createdAt
             }
         }
     }
@@ -55,8 +57,8 @@ fun NoteEditScreen(
                 showPinDialog = false
                 if (pinAction == PinAction.ENCRYPT) {
                     val payload = EncryptionManager.encrypt(content, pin)
-                    content = payload.encryptedData // Store the encrypted text
-                    salt = payload.salt // Store the unique salt
+                    content = payload.encryptedData
+                    salt = payload.salt
                     isEncrypted = true
                     Toast.makeText(context, "Note Encrypted!", Toast.LENGTH_SHORT).show()
                 } else { // DECRYPT
@@ -68,7 +70,7 @@ fun NoteEditScreen(
                         if (decryptedContent != null) {
                             content = decryptedContent
                             isEncrypted = false
-                            salt = null // Clear the salt as the note is no longer encrypted
+                            salt = null
                             Toast.makeText(context, "Note Decrypted!", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(context, "Incorrect PIN!", Toast.LENGTH_SHORT).show()
@@ -128,12 +130,17 @@ fun NoteEditScreen(
 
                     IconButton(onClick = {
                         if (title.isNotBlank()) {
+                            val currentTime = System.currentTimeMillis()
+                            val finalCreatedAt = if (isNewNote) currentTime else createdAt
+
                             val noteToSave = Note(
                                 id = noteId ?: 0,
                                 title = title,
                                 content = content,
                                 isEncrypted = isEncrypted,
-                                salt = salt // SAVE THE SALT
+                                salt = salt,
+                                createdAt = finalCreatedAt,
+                                updatedAt = currentTime
                             )
                             if (isNewNote) viewModel.insert(noteToSave) else viewModel.update(noteToSave)
                             navController.popBackStack()

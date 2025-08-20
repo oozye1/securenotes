@@ -11,13 +11,14 @@ data class Note(
     val title: String,
     val content: String,
     val isEncrypted: Boolean = false,
-
-    // ADD THIS FIELD to store the unique salt for each note
-    // It's a byte array, which Room knows how to store as a BLOB
     @ColumnInfo(typeAffinity = ColumnInfo.BLOB)
-    val salt: ByteArray? = null
+    val salt: ByteArray? = null,
+
+    // ADD THESE TWO FIELDS
+    val createdAt: Long,
+    val updatedAt: Long
 ) {
-    // These equals/hashCode functions are important when working with byte arrays in data classes
+    // Boilerplate for byte array comparison
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
@@ -32,6 +33,8 @@ data class Note(
             if (other.salt == null) return false
             if (!salt.contentEquals(other.salt)) return false
         } else if (other.salt != null) return false
+        if (createdAt != other.createdAt) return false
+        if (updatedAt != other.updatedAt) return false
 
         return true
     }
@@ -42,6 +45,8 @@ data class Note(
         result = 31 * result + content.hashCode()
         result = 31 * result + isEncrypted.hashCode()
         result = 31 * result + (salt?.contentHashCode() ?: 0)
+        result = 31 * result + createdAt.hashCode()
+        result = 31 * result + updatedAt.hashCode()
         return result
     }
 }

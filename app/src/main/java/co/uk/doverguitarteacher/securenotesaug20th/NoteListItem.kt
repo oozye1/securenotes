@@ -14,6 +14,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
 fun NoteListItem(
@@ -40,23 +42,22 @@ fun NoteListItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // If the note is encrypted, show a placeholder
-                val contentToShow = if (note.isEncrypted) {
-                    "Content is encrypted"
-                } else {
-                    note.content
-                }
-
+                Spacer(modifier = Modifier.height(4.dp))
+                val contentToShow = if (note.isEncrypted) "Content is encrypted" else note.content
                 Text(
                     text = contentToShow,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                // --- ADD THE TIMESTAMP DISPLAY ---
+                Text(
+                    text = "Modified: ${formatTimestamp(note.updatedAt)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            // If the note is encrypted, show the padlock icon
             if (note.isEncrypted) {
                 Spacer(modifier = Modifier.width(16.dp))
                 Icon(
@@ -67,4 +68,10 @@ fun NoteListItem(
             }
         }
     }
+}
+
+// Helper function to format our Long timestamp into a nice string
+private fun formatTimestamp(timestamp: Long): String {
+    val sdf = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
+    return sdf.format(Date(timestamp))
 }
